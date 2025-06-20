@@ -20,8 +20,13 @@ namespace Pyxoom_Rabbit
         private string _exchange = "";
         private readonly Dictionary<string, object> _arguments;
 
-        public RabbitMQHelper(IConfiguration config)
+        public RabbitMQHelper()
         {
+            var config = new ConfigurationBuilder()
+            .SetBasePath(AppContext.BaseDirectory)
+            .AddJsonFile("appsettings.json", optional: false)
+            .Build();
+
             _hostName = config["RabbitMQ:HostName"]!;
             _port = int.TryParse(config["RabbitMQ:Port"], out var port) ? port : 5671;
             _userName = config["RabbitMQ:UserName"]!;
