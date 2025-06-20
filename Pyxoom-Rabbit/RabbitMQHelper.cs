@@ -64,8 +64,8 @@ namespace Pyxoom_Rabbit
 
             try
             {
-                using IConnection connection = await factory.CreateConnectionAsync();
-                using var channel = await connection.Mode();                 
+                using IConnection connection = await factory.CreateConnection();
+                using var channel = await connection.CreateModel();                 
 
                 var properties = channel.CreateBasicProperties();
                 properties.Headers = new Dictionary<string, object>
@@ -90,7 +90,7 @@ namespace Pyxoom_Rabbit
         public async Task CreateQueueAsync(string queueName)
         {
             var factory = GetSecureConnectionFactory();
-            using var connection = await factory.CreateConnectionAsync();
+            using var connection = await factory.CreateConnection();
             using var channel = connection.CreateModel();
 
             channel.QueueDeclare(queue: queueName, durable: true, exclusive: false, autoDelete: false, arguments: _arguments);
