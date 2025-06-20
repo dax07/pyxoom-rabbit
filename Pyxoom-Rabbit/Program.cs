@@ -35,30 +35,7 @@ namespace PSW.Pyxoom.Analytix.Queue
                 Log.Logger.Information($"Mensaje recibido: {messageId}");
                 var jsonData = JsonSerializer.Deserialize<Dictionary<string, object>>(body);
                 var method = jsonData["method"].ToString();
-                if (method == events)
-                {
-                    var service = new ModelAnalytix();
-                    var res = service.SaveQuestionnaireAnswers(jsonData["_event"].ToString(), jsonData["_Dimmensions"].ToString(), jsonData["_xmlRecommendations"].ToString(), jsonData["_xmlResult"].ToString(), jsonData["AccessKey"].ToString());
-                    if (!res.IsSuccess)
-                    {
-                        Log.Logger.Error($"Mensaje con error: {messageId} {messageId}");
-                    }
-                    pr = res;
-                }
-                if (method == normaEvents)
-                {
-                    var jsonDataObject = JsonSerializer.Deserialize<Dictionary<string, object>>(body);
-                    var service = new InteractiveModel();
-                    var eventId = int.Parse(jsonData["eventId"].ToString());
-                    var data = JsonSerializer.Deserialize<List<AnswerQuestion>>(jsonData["data"].ToString());
-                    var res = service.SaveQuestionnaire(jsonData["webAccess"].ToString(), eventId, jsonData["accessKey"].ToString(), jsonData["dimensions"].ToString(), data);
-                    if (!res.IsSuccess)
-                    {
-                        Log.Logger.Error($"Mensaje con error: {messageId} {body}");
-                    }
-                    pr.IsSuccess = res.IsSuccess;
-                    pr.Msg = res.Msg;
-                }
+
                 return pr;
             }
 
