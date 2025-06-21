@@ -62,102 +62,102 @@ namespace Pyxoom_Rabbit
             };
         }
 
-        public async Task PublishAsync(string message, string exchange = "")
-        {
-            _exchange = exchange;
-            var factory = GetSecureConnectionFactory();
+        //public async Task PublishAsync(string message, string exchange = "")
+        //{
+        //    _exchange = exchange;
+        //    var factory = GetSecureConnectionFactory();
 
-            try
-            {
-                using IConnection connection = await factory.CreateConnection();
-                using var channel = await connection.CreateModel();                 
+        //    try
+        //    {
+        //        using IConnection connection = await factory.CreateConnection();
+        //        using var channel = await connection.CreateModel();                 
 
-                var properties = channel.CreateBasicProperties();
-                properties.Headers = new Dictionary<string, object>
-                {
-                    { "x-attempts", 1 },
-                    { "x-datetime", DateTime.Now.ToString("O") }
-                };
-                properties.Timestamp = new AmqpTimestamp(DateTimeOffset.UtcNow.ToUnixTimeSeconds());
-                properties.MessageId = Guid.NewGuid().ToString();
+        //        var properties = channel.CreateBasicProperties();
+        //        properties.Headers = new Dictionary<string, object>
+        //        {
+        //            { "x-attempts", 1 },
+        //            { "x-datetime", DateTime.Now.ToString("O") }
+        //        };
+        //        properties.Timestamp = new AmqpTimestamp(DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+        //        properties.MessageId = Guid.NewGuid().ToString();
 
-                var body = Encoding.UTF8.GetBytes(message);
+        //        var body = Encoding.UTF8.GetBytes(message);
 
-                channel.BasicPublish(exchange, _queueName, properties, body);
-                Console.WriteLine($"[x] Sent '{properties.MessageId}'");
-            }
-            catch
-            {
-                throw new Exception(ERROR_PUBLISH_MESSAGE);
-            }
-        }
+        //        channel.BasicPublish(exchange, _queueName, properties, body);
+        //        Console.WriteLine($"[x] Sent '{properties.MessageId}'");
+        //    }
+        //    catch
+        //    {
+        //        throw new Exception(ERROR_PUBLISH_MESSAGE);
+        //    }
+        //}
 
-        public async Task CreateQueueAsync(string queueName)
-        {
-            var factory = GetSecureConnectionFactory();
-            using var connection = await factory.CreateConnection();
-            using var channel = connection.CreateModel();
+        //public async Task CreateQueueAsync(string queueName)
+        //{
+        //    var factory = GetSecureConnectionFactory();
+        //    using var connection = await factory.CreateConnection();
+        //    using var channel = connection.CreateModel();
 
-            channel.QueueDeclare(queue: queueName, durable: true, exclusive: false, autoDelete: false, arguments: _arguments);
-            channel.QueueDeclare(queue: queueName + "_delayedQueue", durable: true, exclusive: false, autoDelete: false);
+        //    channel.QueueDeclare(queue: queueName, durable: true, exclusive: false, autoDelete: false, arguments: _arguments);
+        //    channel.QueueDeclare(queue: queueName + "_delayedQueue", durable: true, exclusive: false, autoDelete: false);
 
-            Console.WriteLine($"[x] Queue '{queueName}' created successfully.");
-        }
+        //    Console.WriteLine($"[x] Queue '{queueName}' created successfully.");
+        //}
 
-        public void Consume(Func<string, string, ProcessResult> onConsumeFunction, Action<string, string, string, string> rejectFn)
-        {
-            var factory = GetSecureConnectionFactory();
-            var connection = factory.CreateConnection(); // Esto sigue siendo válido si lo haces sin `await`
-            var channel = connection.CreateModel();
+        //public void Consume(Func<string, string, ProcessResult> onConsumeFunction, Action<string, string, string, string> rejectFn)
+        //{
+        //    var factory = GetSecureConnectionFactory();
+        //    var connection = factory.CreateConnection(); // Esto sigue siendo válido si lo haces sin `await`
+        //    var channel = connection.CreateModel();
 
-            channel.QueueDeclare(_queueName, true, false, false, _arguments);
+        //    channel.QueueDeclare(_queueName, true, false, false, _arguments);
 
-            var consumer = new EventingBasicConsumer(channel);
-            consumer.Received += (model, ea) =>
-            {
-                var props = ea.BasicProperties;
-                var headers = props.Headers ?? new Dictionary<string, object>();
-                var messageId = props.MessageId ?? Guid.NewGuid().ToString();
+        //    var consumer = new EventingBasicConsumer(channel);
+        //    consumer.Received += (model, ea) =>
+        //    {
+        //        var props = ea.BasicProperties;
+        //        var headers = props.Headers ?? new Dictionary<string, object>();
+        //        var messageId = props.MessageId ?? Guid.NewGuid().ToString();
 
-                var body = ea.Body.ToArray();
-                var message = Encoding.UTF8.GetString(body);
-                Console.WriteLine($"[x] Received '{messageId}'");
+        //        var body = ea.Body.ToArray();
+        //        var message = Encoding.UTF8.GetString(body);
+        //        Console.WriteLine($"[x] Received '{messageId}'");
 
-                var attemptCount = headers.TryGetValue("x-attempts", out var val) ? Convert.ToInt32(val) : 1;
+        //        var attemptCount = headers.TryGetValue("x-attempts", out var val) ? Convert.ToInt32(val) : 1;
 
-                if (attemptCount >= 3)
-                {
-                    channel.BasicReject(ea.DeliveryTag, false);
-                    return;
-                }
+        //        if (attemptCount >= 3)
+        //        {
+        //            channel.BasicReject(ea.DeliveryTag, false);
+        //            return;
+        //        }
 
-                try
-                {
-                    var result = onConsumeFunction(message, messageId);
-                    attemptCount++;
+        //        try
+        //        {
+        //            var result = onConsumeFunction(message, messageId);
+        //            attemptCount++;
 
-                    if (!result.IsSuccess)
-                    {
-                        props.Headers["x-attempts"] = attemptCount;
+        //            if (!result.IsSuccess)
+        //            {
+        //                props.Headers["x-attempts"] = attemptCount;
 
-                        channel.BasicPublish(_exchange ?? "", _queueName, props, body);
-                        if (attemptCount == 3)
-                            rejectFn?.Invoke(message, messageId, _queueName, result.Msg);
-                    }
+        //                channel.BasicPublish(_exchange ?? "", _queueName, props, body);
+        //                if (attemptCount == 3)
+        //                    rejectFn?.Invoke(message, messageId, _queueName, result.Msg);
+        //            }
 
-                    channel.BasicAck(ea.DeliveryTag, false);
-                }
-                catch
-                {
-                    channel.BasicReject(ea.DeliveryTag, false);
-                    throw new Exception(ERROR_NO_CONTROLLED_AND_PROCCESS);
-                }
-            };
+        //            channel.BasicAck(ea.DeliveryTag, false);
+        //        }
+        //        catch
+        //        {
+        //            channel.BasicReject(ea.DeliveryTag, false);
+        //            throw new Exception(ERROR_NO_CONTROLLED_AND_PROCCESS);
+        //        }
+        //    };
 
-            channel.BasicConsume(_queueName, false, consumer);
-            Console.WriteLine("[*] Waiting for messages. Press [enter] to exit.");
-            Console.ReadLine();
-        }
+        //    channel.BasicConsume(_queueName, false, consumer);
+        //    Console.WriteLine("[*] Waiting for messages. Press [enter] to exit.");
+        //    Console.ReadLine();
+        //}
 
         public class ProcessResult
         {

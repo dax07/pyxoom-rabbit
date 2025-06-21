@@ -1,7 +1,8 @@
-﻿using Serilog;
-using System.Text.Json;
+﻿using Microsoft.Extensions.Configuration;
 using Pyxoom_Rabbit;
-using Microsoft.Extensions.Configuration;
+using Pyxoom_Rabbit.Database;
+using Serilog;
+using System.Text.Json;
 
 namespace PSW.Pyxoom.Analytix.Queue
 {
@@ -9,20 +10,24 @@ namespace PSW.Pyxoom.Analytix.Queue
     {
         private const string events = "events";
         private const string normaEvents = "normaEvents";
-        static void Main(string[] args, IConfiguration config)
+        static void Main(string[] args)
         {
+            var config = new ConfigurationBuilder()
+                .AddJsonFile("appsettings.json")
+                .Build();
+
             var logFile = config["serilog:write-to:File.path"]!;
             var templateFile = config["serilog:write-to:File.outputTemplate"]!;
 
-            var logger = new LoggerConfiguration()
-                            .Enrich.FromLogContext()
-                            .MinimumLevel.Information()
-                            .WriteTo.Console(outputTemplate: templateFile)
-                            .WriteTo.File(logFile, rollingInterval: RollingInterval.Day)
-                            .CreateLogger();
-            //.ReadFrom.AppSettings().CreateLogger();
-            logger.Information("Starting Analytix Worker Services");
-            Log.Logger = logger;
+            //var logger = new LoggerConfiguration()
+            //                .Enrich.FromLogContext()
+            //                .MinimumLevel.Information()
+            //                .WriteTo.Console(outputTemplate: templateFile)
+            //                .WriteTo.File(logFile, rollingInterval: RollingInterval.Day)
+            //                .CreateLogger();
+            ////.ReadFrom.AppSettings().CreateLogger();
+            //logger.Information("Starting Analytix Worker Services");
+            //Log.Logger = logger;
             var rabbitHelper = new RabbitMQHelper();
             //var service2 = new ModelAnalytix();
             //service2.GetEventComments("90");
@@ -48,7 +53,13 @@ namespace PSW.Pyxoom.Analytix.Queue
             //        Queue = _queueName
             //    });
             //});
+
             Environment.Exit(0);
+
+            var dbManager = new DbManager(config);
+
+            // Ejecutar SQL
+            dbManager.SqlService.EjecutarConsulta();
         }
     }
 }
