@@ -41,7 +41,8 @@ namespace PSW.Pyxoom.Analytix.Queue
             //    return pr;
             //}
 
-            //rabbitHelper.Consume(ConsumeFunction, (string body, string messageId, string _queueName, string errorMessage) => {
+            //rabbitHelper.Consume(ConsumeFunction, (string body, string messageId, string _queueName, string errorMessage) =>
+            //{
             //    var service = new ErrorService();
             //    service.InsertError(new EF.ErrorQueue
             //    {
