@@ -8,8 +8,6 @@ namespace PSW.Pyxoom.Analytix.Queue
 {
     internal class Program
     {
-        private const string events = "events";
-        private const string normaEvents = "normaEvents";
         static void Main(string[] args)
         {
             var config = new ConfigurationBuilder()
@@ -28,32 +26,32 @@ namespace PSW.Pyxoom.Analytix.Queue
             ////.ReadFrom.AppSettings().CreateLogger();
             //logger.Information("Starting Analytix Worker Services");
             //Log.Logger = logger;
-            var rabbitHelper = new RabbitMQHelper();
+            var rabbitHelper = new RabbitMQHelper(config);
             //var service2 = new ModelAnalytix();
             //service2.GetEventComments("90");
-            //ProcessResult ConsumeFunction(string body, string messageId = "")
-            //{
-            //    var pr = new ProcessResult { };
-            //    Log.Logger.Information($"Mensaje recibido: {messageId}");
-            //    var jsonData = JsonSerializer.Deserialize<Dictionary<string, object>>(body);
-            //    var method = jsonData["method"].ToString();
+            RabbitMQHelper.ProcessResult ConsumeFunction(string body, string messageId = "")
+            {
+                var pr = new RabbitMQHelper.ProcessResult { };
+                Log.Logger.Information($"Mensaje recibido: {messageId}");
+                var jsonData = JsonSerializer.Deserialize<Dictionary<string, object>>(body);
+                var method = jsonData["method"].ToString();
 
-            //    return pr;
-            //}
+                return pr;
+            }
 
-            //rabbitHelper.Consume(ConsumeFunction, (string body, string messageId, string _queueName, string errorMessage) =>
-            //{
-            //    var service = new ErrorService();
-            //    service.InsertError(new EF.ErrorQueue
-            //    {
-            //        Error = errorMessage,
-            //        FechaHora = DateTime.Now,
-            //        Mensaje = body,
-            //        MessageId = messageId,
-            //        TipoError = ErrorService.ERROR_CONSUME_MESSAGE,
-            //        Queue = _queueName
-            //    });
-            //});
+            rabbitHelper.Consume(ConsumeFunction, (string body, string messageId, string _queueName, string errorMessage) =>
+            {
+                //var service = new ErrorService();
+                //service.InsertError(new EF.ErrorQueue
+                //{
+                //    Error = errorMessage,
+                //    FechaHora = DateTime.Now,
+                //    Mensaje = body,
+                //    MessageId = messageId,
+                //    TipoError = ErrorService.ERROR_CONSUME_MESSAGE,
+                //    Queue = _queueName
+                //});
+            });
 
             Environment.Exit(0);
 

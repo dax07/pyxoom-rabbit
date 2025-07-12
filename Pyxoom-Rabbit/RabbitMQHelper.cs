@@ -1,11 +1,12 @@
-﻿using RabbitMQ.Client;
+﻿using Microsoft.Extensions.Configuration;
+using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
-using Microsoft.Extensions.Configuration;
 using System.Text;
 
 namespace Pyxoom_Rabbit
 {
-    public class RabbitMQHelper
+
+    public partial class RabbitMQHelper
     {
         public static string ERROR_PUBLISH_MESSAGE = "Error al publicar el mensaje";
         public static string ERROR_CONSUME_MESSAGE = "Error al consumir el mensaje";
@@ -17,28 +18,57 @@ namespace Pyxoom_Rabbit
         private readonly string _password;
         private readonly string _virtualHost;
         private readonly string _queueName;
-        private string _exchange = "";
+        private string _exchange;
         private readonly Dictionary<string, object> _arguments;
 
-        public RabbitMQHelper()
+        public RabbitMQHelper(string hostName, int port = 5671, string userName = "guest", string password = "guest", string virtualHost = "/", string queueName = null)
         {
-            var config = new ConfigurationBuilder()
-            .SetBasePath(AppContext.BaseDirectory)
-            .AddJsonFile("appsettings.json", optional: false)
-            .Build();
-
-            _hostName = config["RabbitMQ:HostName"]!;
-            _port = int.TryParse(config["RabbitMQ:Port"], out var port) ? port : 5671;
-            _userName = config["RabbitMQ:UserName"]!;
-            _password = config["RabbitMQ:Password"]!;
-            _virtualHost = config["RabbitMQ:VirtualHost"]!;
-            _queueName = config["RabbitMQ:QueueName"]!;
-
-            _arguments = new()
+            _hostName = hostName;
+            _port = port;
+            _userName = userName;
+            _password = password;
+            _virtualHost = virtualHost;
+            _queueName = queueName;
+            _arguments = new Dictionary<string, object>
             {
                 { "x-dead-letter-exchange", "" },
                 { "x-dead-letter-routing-key", _queueName + "_delayedQueue" }
             };
+            this.CreateQueue(queueName);
+        }
+
+        //public RabbitMQHelper(string virtualHost = "/")
+        //{
+        //    _hostName = WebConfigurationManager.AppSettings["RabbitHostName"];
+        //    _userName = WebConfigurationManager.AppSettings["RabbitUserName"];
+        //    _password = WebConfigurationManager.AppSettings["RabbitPassword"];
+        //    _virtualHost = WebConfigurationManager.AppSettings["RabbitVirtualHost"];
+        //    _queueName = WebConfigurationManager.AppSettings["RabbitChannel"];
+        //    _port = 5671;
+        //    _arguments = new Dictionary<string, object>
+        //    {
+        //        { "x-dead-letter-exchange", "" },
+        //        { "x-dead-letter-routing-key", _queueName + "_delayedQueue" }
+        //    };
+        //    this.CreateQueue(_queueName);
+        //}
+
+        public RabbitMQHelper(IConfiguration configuration)
+        {
+            _hostName = configuration["RabbitMQ:HostName"];
+            _userName = configuration["RabbitMQ:UserName"];
+            _password = configuration["RabbitMQ:Password"];
+            _virtualHost = configuration["RabbitMQ:VirtualHost"];
+            _port = int.TryParse(configuration["RabbitMQ:Port"], out int parsedPort) ? parsedPort : 5671;
+            _queueName = configuration["RabbitMQ:Channel"];
+
+            _arguments = new Dictionary<string, object>
+        {
+            { "x-dead-letter-exchange", "" },
+            { "x-dead-letter-routing-key", _queueName + "_delayedQueue" }
+        };
+
+            this.CreateQueue(_queueName);
         }
 
         private ConnectionFactory GetSecureConnectionFactory()
@@ -55,122 +85,152 @@ namespace Pyxoom_Rabbit
                     Enabled = true,
                     ServerName = _hostName,
                     Version = System.Security.Authentication.SslProtocols.Tls12,
-                    AcceptablePolicyErrors =
-                        System.Net.Security.SslPolicyErrors.RemoteCertificateNameMismatch |
-                        System.Net.Security.SslPolicyErrors.RemoteCertificateChainErrors
+                    AcceptablePolicyErrors = System.Net.Security.SslPolicyErrors.RemoteCertificateNameMismatch |
+                                             System.Net.Security.SslPolicyErrors.RemoteCertificateChainErrors
                 }
             };
         }
 
-        //public async Task PublishAsync(string message, string exchange = "")
-        //{
-        //    _exchange = exchange;
-        //    var factory = GetSecureConnectionFactory();
+        public string GetQueueName() => _queueName;
 
-        //    try
-        //    {
-        //        using IConnection connection = await factory.CreateConnection();
-        //        using var channel = await connection.CreateModel();                 
-
-        //        var properties = channel.CreateBasicProperties();
-        //        properties.Headers = new Dictionary<string, object>
-        //        {
-        //            { "x-attempts", 1 },
-        //            { "x-datetime", DateTime.Now.ToString("O") }
-        //        };
-        //        properties.Timestamp = new AmqpTimestamp(DateTimeOffset.UtcNow.ToUnixTimeSeconds());
-        //        properties.MessageId = Guid.NewGuid().ToString();
-
-        //        var body = Encoding.UTF8.GetBytes(message);
-
-        //        channel.BasicPublish(exchange, _queueName, properties, body);
-        //        Console.WriteLine($"[x] Sent '{properties.MessageId}'");
-        //    }
-        //    catch
-        //    {
-        //        throw new Exception(ERROR_PUBLISH_MESSAGE);
-        //    }
-        //}
-
-        //public async Task CreateQueueAsync(string queueName)
-        //{
-        //    var factory = GetSecureConnectionFactory();
-        //    using var connection = await factory.CreateConnection();
-        //    using var channel = connection.CreateModel();
-
-        //    channel.QueueDeclare(queue: queueName, durable: true, exclusive: false, autoDelete: false, arguments: _arguments);
-        //    channel.QueueDeclare(queue: queueName + "_delayedQueue", durable: true, exclusive: false, autoDelete: false);
-
-        //    Console.WriteLine($"[x] Queue '{queueName}' created successfully.");
-        //}
-
-        //public void Consume(Func<string, string, ProcessResult> onConsumeFunction, Action<string, string, string, string> rejectFn)
-        //{
-        //    var factory = GetSecureConnectionFactory();
-        //    var connection = factory.CreateConnection(); // Esto sigue siendo válido si lo haces sin `await`
-        //    var channel = connection.CreateModel();
-
-        //    channel.QueueDeclare(_queueName, true, false, false, _arguments);
-
-        //    var consumer = new EventingBasicConsumer(channel);
-        //    consumer.Received += (model, ea) =>
-        //    {
-        //        var props = ea.BasicProperties;
-        //        var headers = props.Headers ?? new Dictionary<string, object>();
-        //        var messageId = props.MessageId ?? Guid.NewGuid().ToString();
-
-        //        var body = ea.Body.ToArray();
-        //        var message = Encoding.UTF8.GetString(body);
-        //        Console.WriteLine($"[x] Received '{messageId}'");
-
-        //        var attemptCount = headers.TryGetValue("x-attempts", out var val) ? Convert.ToInt32(val) : 1;
-
-        //        if (attemptCount >= 3)
-        //        {
-        //            channel.BasicReject(ea.DeliveryTag, false);
-        //            return;
-        //        }
-
-        //        try
-        //        {
-        //            var result = onConsumeFunction(message, messageId);
-        //            attemptCount++;
-
-        //            if (!result.IsSuccess)
-        //            {
-        //                props.Headers["x-attempts"] = attemptCount;
-
-        //                channel.BasicPublish(_exchange ?? "", _queueName, props, body);
-        //                if (attemptCount == 3)
-        //                    rejectFn?.Invoke(message, messageId, _queueName, result.Msg);
-        //            }
-
-        //            channel.BasicAck(ea.DeliveryTag, false);
-        //        }
-        //        catch
-        //        {
-        //            channel.BasicReject(ea.DeliveryTag, false);
-        //            throw new Exception(ERROR_NO_CONTROLLED_AND_PROCCESS);
-        //        }
-        //    };
-
-        //    channel.BasicConsume(_queueName, false, consumer);
-        //    Console.WriteLine("[*] Waiting for messages. Press [enter] to exit.");
-        //    Console.ReadLine();
-        //}
-
-        public class ProcessResult
+        public void Publish(string message, string exchange = "")
         {
-            public ProcessResult(bool isSuccess, string msg, string? data = null)
-            {
-                IsSuccess = isSuccess;
-                Msg = msg;
-                Data = data;
-            }
+            _exchange = exchange;
 
-            public bool IsSuccess { get; set; }
-            public string Msg { get; set; }
-            public string? Data { get; set; }
+            var factory = GetSecureConnectionFactory();
+
+            try
+            {
+                using (var connection = factory.CreateConnection())
+                using (var channel = connection.CreateModel())
+                {
+                    var properties = channel.CreateBasicProperties();
+                    properties.Headers = new Dictionary<string, object>
+                    {
+                        { "x-attempts", 1 },
+                        { "x-datetime", DateTime.Now.ToString("O") }
+                    };
+                    properties.Timestamp = new AmqpTimestamp(DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+                    properties.MessageId = Guid.NewGuid().ToString();
+
+                    var body = Encoding.UTF8.GetBytes(message);
+
+                    channel.BasicPublish(exchange: exchange,
+                                         routingKey: _queueName,
+                                         basicProperties: properties,
+                                         body: body);
+
+                    Console.WriteLine($"[x] Sent '{properties.MessageId}'");
+                }
+            }
+            catch (Exception)
+            {
+                throw new Exception(ERROR_PUBLISH_MESSAGE);
+            }
+        }
+
+        public void Consume(Func<string, string, ProcessResult> onConsumeFunction, Action<string, string, string, string> rejectFn)
+        {
+            var factory = GetSecureConnectionFactory();
+
+            var connection = factory.CreateConnection();
+            var channel = connection.CreateModel();
+
+            channel.QueueDeclare(queue: _queueName,
+                                 durable: true,
+                                 exclusive: false,
+                                 autoDelete: false,
+                                 arguments: _arguments);
+
+            var consumer = new EventingBasicConsumer(channel);
+            consumer.Received += (model, ea) =>
+            {
+                var properties = ea.BasicProperties;
+                var headers = properties.Headers ?? new Dictionary<string, object>();
+                string messageId = properties.MessageId;
+
+                var body = ea.Body;
+                var message = Encoding.UTF8.GetString(body.ToArray());
+                Console.WriteLine($"[x] Received '{messageId}'");
+
+                var attemptCount = Convert.ToInt32(properties.Headers?["x-attempts"]);
+                if (attemptCount >= 3)
+                {
+                    channel.BasicReject(deliveryTag: ea.DeliveryTag, requeue: false);
+                    return;
+                }
+
+                ProcessResult pr = new ProcessResult(false, string.Empty);
+                try
+                {
+                    pr = onConsumeFunction?.Invoke(message, messageId);
+                }
+                catch (Exception)
+                {
+                    channel.BasicReject(deliveryTag: ea.DeliveryTag, requeue: false);
+                    throw new Exception(ERROR_NO_CONTROLLED_AND_PROCCESS);
+                }
+
+                Console.WriteLine($"[x] x-attempts '{attemptCount}'");
+
+                attemptCount++;
+                if (pr.IsSuccess != true)
+                {
+                    properties.Headers["x-attempts"] = attemptCount;
+
+                    channel.BasicPublish(exchange: _exchange ?? string.Empty,
+                                         routingKey: _queueName,
+                                         basicProperties: properties,
+                                         body: body);
+
+                    if (attemptCount == 3)
+                    {
+                        rejectFn?.Invoke(message, messageId, _queueName, pr.Msg);
+                    }
+                }
+
+                channel.BasicAck(deliveryTag: ea.DeliveryTag, multiple: false);
+            };
+
+            channel.BasicConsume(queue: _queueName,
+                                 autoAck: false,
+                                 consumer: consumer);
+
+            Console.WriteLine("[*] Waiting for messages. Press [enter] to exit.");
+            Console.ReadLine();
+        }
+
+        public void CreateQueue(string queueName = null)
+        {
+            var factory = GetSecureConnectionFactory();
+
+            using (var connection = factory.CreateConnection())
+            using (var channel = connection.CreateModel())
+            {
+                channel.QueueDeclare(queue: _queueName,
+                                     durable: true,
+                                     exclusive: false,
+                                     autoDelete: false,
+                                     arguments: _arguments);
+
+                channel.QueueDeclare(queue: _queueName + "_delayedQueue",
+                                     durable: true,
+                                     exclusive: false,
+                                     autoDelete: false);
+
+                Console.WriteLine($"[x] Queue '{queueName}' created successfully.");
+            }
+        }
+
+        public class ErrorQueue
+        {
+            public int Id { get; set; }
+            public string Queue { get; set; }
+            public string MessageId { get; set; }
+            public Nullable<System.DateTime> FechaHora { get; set; }
+            public string TipoError { get; set; }
+            public string Mensaje { get; set; }
+            public string Error { get; set; }
         }
     }
 }
