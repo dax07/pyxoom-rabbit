@@ -13,7 +13,7 @@ using sib_api_v3_sdk.Client;
 using sib_api_v3_sdk.Model;
 
 namespace Pyxoom_Rabbit.Services
-{
+{ 
     public class EmailService
     {
         private readonly string _connectionString;
@@ -82,65 +82,62 @@ namespace Pyxoom_Rabbit.Services
         {
             using var conn = new SqlConnection(_connectionString);
 
-            // Crear la lista de parámetros para el IN
-            var parameters = string.Join(",", personProcessIds.Select((id, index) => $"@personId{index}"));
-
-            using var cmd = new SqlCommand($@"SELECT 
-                pp.login,
-                pp.password,
-                CONCAT(p.primer_nombre, ' ', p.apellido_paterno) as NameCandidateEmail,
-                v.nombre as puesto,
-                r.nombre as responsable,
-                p.correo_electronico,
-                pp.dias_expiracion,
-                tm.texto as mainMessage,
-                CASE WHEN pp.activo = 1 THEN 1 ELSE 0 END as hasInteractive,
-                CASE WHEN @languageId = 2 THEN 1 ELSE 0 END as isEnglish
-                FROM PyxoomUser.PersonaProceso pp
-                INNER JOIN PyxoomUser.Persona p ON pp.id_persona = p.id_persona
-                INNER JOIN PyxoomUser.Vacante v ON pp.id_vacante = v.id_vacante
-                LEFT JOIN PyxoomUser.Responsable r ON v.id_responsable = r.id_responsable
-                LEFT JOIN PyxoomUser.TextoEmail tm ON tm.id_empresa = @companyId AND tm.tipo_email = 'candidato_nuevo'
-                WHERE pp.id_persona_proceso IN ({parameters})
-                AND v.id_empresa = @companyId", conn)
-            {
-                CommandType = CommandType.Text
-            };
-
-            // Agregar parámetros dinámicamente
-            for (int i = 0; i < personProcessIds.Length; i++)
-            {
-                cmd.Parameters.AddWithValue($"@personId{i}", personProcessIds[i]);
-            }
-            cmd.Parameters.AddWithValue("@companyId", companyId);
-            cmd.Parameters.AddWithValue("@languageId", languageId);
-
-            var resultados = new List<PersonInteractiveDto>();
-
             try
             {
                 conn.Open();
-                using var reader = cmd.ExecuteReader();
 
+                // Crear DataTable para los IDs (similar a tu lógica original)
+                DataTable idsPersonaProceso = new DataTable();
+                idsPersonaProceso.Columns.Add("id", typeof(Int64));
+
+                var ppIds = personProcessIds
+                    .Where(f => !string.IsNullOrEmpty(f))
+                    .Select(f => int.Parse(f))
+                    .Distinct()
+                    .ToArray();
+
+                foreach (var id in ppIds)
+                {
+                    idsPersonaProceso.Rows.Add(id);
+                }
+
+                // Ejecutar el mismo stored procedure que usas en Unity
+                using var cmd = new SqlCommand("Pyxoom.ObtenerInfoMail", conn)
+                {
+                    CommandType = CommandType.StoredProcedure
+                };
+
+                SqlParameter ids = new SqlParameter("@pPersonaProcesoIds", SqlDbType.Structured)
+                {
+                    Value = idsPersonaProceso,
+                    TypeName = "Pyxoom.IdBig"
+                };
+                cmd.Parameters.Add(ids);
+
+                var resultados = new List<PersonInteractiveDto>();
+
+                using var reader = cmd.ExecuteReader();
                 while (reader.Read())
                 {
                     var persona = new PersonInteractiveDto
                     {
-                        login = DbUtils.GetNullableString(reader, "login"),
-                        password = DbUtils.GetNullableString(reader, "password"),
-                        NameCandidateEmail = DbUtils.GetNullableString(reader, "NameCandidateEmail"),
+                        login = !string.IsNullOrEmpty(DbUtils.GetNullableString(reader, "login"))
+                            ? Encryption.Decrypt(DbUtils.GetNullableString(reader, "login"))
+                            : string.Empty,
+                        password = !string.IsNullOrEmpty(DbUtils.GetNullableString(reader, "password"))
+                            ? Encryption.Decrypt(DbUtils.GetNullableString(reader, "password"))
+                            : string.Empty,
+                        NameCandidateEmail = ObtenerNombreCompleto(reader),
                         puesto = DbUtils.GetNullableString(reader, "puesto"),
-                        responsable = DbUtils.GetNullableString(reader, "responsable") ?? "Administrador",
+                        responsable = !string.IsNullOrEmpty(DbUtils.GetNullableString(reader, "responsable"))
+                            ? Encryption.DecryptFullName(DbUtils.GetNullableString(reader, "responsable"))
+                            : "Administrador",
                         correo_electronico = DbUtils.GetNullableString(reader, "correo_electronico"),
-                        dias_expiracion = Convert.ToInt32(reader["dias_expiracion"]),
-                        mainMessage = DbUtils.GetNullableString(reader, "mainMessage"),
-                        hasInteractive = Convert.ToBoolean(reader["hasInteractive"]),
-                        isEnglish = Convert.ToBoolean(reader["isEnglish"])
+                        dias_expiracion = ObtenerDiasExpiracion(companyId),
+                        mainMessage = ObtenerMensajePrincipal(Convert.ToInt32(reader["personProcessId"]), companyId, languageId),
+                        hasInteractive = VerificarHasInteractive(Convert.ToInt32(reader["personProcessId"])),
+                        isEnglish = languageId == 2
                     };
-
-                    // Desencriptar datos sensibles
-                    if (!string.IsNullOrEmpty(persona.NameCandidateEmail))
-                        persona.NameCandidateEmail = Encryption.Decrypt(persona.NameCandidateEmail);
 
                     resultados.Add(persona);
                 }
@@ -150,7 +147,172 @@ namespace Pyxoom_Rabbit.Services
             catch (Exception ex)
             {
                 Console.WriteLine("Error al obtener acceso persona interactive: " + ex.Message);
+                return new List<PersonInteractiveDto>();
+            }
+        }
+
+        private string ObtenerNombreCompleto(SqlDataReader reader)
+        {
+            string firstName = DbUtils.GetNullableString(reader, "FirstName");
+            string lastName = DbUtils.GetNullableString(reader, "FirstLastName");
+
+            if (!string.IsNullOrEmpty(firstName))
+                firstName = Encryption.Decrypt(firstName);
+            if (!string.IsNullOrEmpty(lastName))
+                lastName = Encryption.Decrypt(lastName);
+
+            return $"{firstName} {lastName}".Trim();
+        }
+
+        private int ObtenerDiasExpiracion(int companyId)
+        {
+            using var conn = new SqlConnection(_connectionString);
+            using var cmd = new SqlCommand(@"SELECT epe.valor 
+                FROM PyxoomUser.Parametros_Empresa pe
+                INNER JOIN PyxoomUser.Empresa_Parametros_Empresa epe ON pe.id_parametro = epe.id_parametro
+                WHERE epe.id_empresa = @companyId AND pe.nombre_parametro = @paramName", conn)
+            {
+                CommandType = CommandType.Text
+            };
+
+            var daysKey = Encryption.Encrypt("expiracion_interactive");
+            cmd.Parameters.AddWithValue("@companyId", companyId);
+            cmd.Parameters.AddWithValue("@paramName", daysKey);
+
+            try
+            {
+                conn.Open();
+                var result = cmd.ExecuteScalar()?.ToString();
+                if (!string.IsNullOrEmpty(result))
+                {
+                    var decryptedValue = Encryption.Decrypt(result);
+                    return Convert.ToInt32(decryptedValue);
+                }
+                return 30; // Valor por defecto
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Error obteniendo días de expiración: " + ex.Message);
+                return 30; // Valor por defecto
+            }
+        }
+
+        private string ObtenerMensajePrincipal(int personProcessId, int companyId, int languageId)
+        {
+            using var conn = new SqlConnection(_connectionString);
+            using var cmd = new SqlCommand(@"SELECT HTML_EmailMessage 
+                FROM PyxoomUser.TemplateEmail 
+                WHERE id_empresa = @companyId AND tipo_email = 'candidato_nuevo' AND id_idioma = @languageId", conn)
+            {
+                CommandType = CommandType.Text
+            };
+
+            cmd.Parameters.AddWithValue("@companyId", companyId);
+            cmd.Parameters.AddWithValue("@languageId", languageId);
+
+            try
+            {
+                conn.Open();
+                return cmd.ExecuteScalar()?.ToString() ?? string.Empty;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Error obteniendo mensaje principal: " + ex.Message);
+                return string.Empty;
+            }
+        }
+
+        private bool VerificarHasInteractive(int personProcessId)
+        {
+            using var conn = new SqlConnection(_connectionString);
+            using var cmd = new SqlCommand(@"SELECT CASE WHEN activo = 1 THEN 1 ELSE 0 END 
+                FROM PyxoomUser.PersonaProceso 
+                WHERE id_persona_proceso = @personProcessId", conn)
+            {
+                CommandType = CommandType.Text
+            };
+
+            cmd.Parameters.AddWithValue("@personProcessId", personProcessId);
+
+            try
+            {
+                conn.Open();
+                var result = cmd.ExecuteScalar();
+                return Convert.ToBoolean(result);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Error verificando hasInteractive: " + ex.Message);
+                return false;
+            }
+        }
+
+        private void ActualizarUsuariosYProcesos(int[] ppIds, int companyId)
+        {
+            using var conn = new SqlConnection(_connectionString);
+
+            try
+            {
+                conn.Open();
+                using var transaction = conn.BeginTransaction();
+
+                // Obtener días de expiración
+                int days = ObtenerDiasExpiracion(companyId);
+                var dateExpire = DateTime.Now.AddDays(days);
+
+                // Actualizar usuarios
+                using (var cmdUsuarios = new SqlCommand(@"UPDATE u SET 
+                    u.bit_activo = 1, 
+                    u.fecha_actualizacion = @fechaActual, 
+                    u.fecha_expiracion = @fechaExpiracion
+                    FROM PyxoomUser.Usuario u
+                    INNER JOIN PyxoomUser.Persona_Proceso pp ON u.id_persona = pp.id_persona
+                    WHERE pp.id_persona_proceso IN (" + string.Join(",", ppIds) + ")", conn, transaction))
+                {
+                    cmdUsuarios.Parameters.AddWithValue("@fechaActual", DateTime.Now);
+                    cmdUsuarios.Parameters.AddWithValue("@fechaExpiracion", dateExpire);
+                    cmdUsuarios.ExecuteNonQuery();
+                }
+
+                // Actualizar procesos
+                using (var cmdProcesos = new SqlCommand(@"UPDATE PyxoomUser.Persona_Proceso 
+                    SET envio_datos = envio_datos + 1 
+                    WHERE id_persona_proceso IN (" + string.Join(",", ppIds) + ")", conn, transaction))
+                {
+                    cmdProcesos.ExecuteNonQuery();
+                }
+
+                transaction.Commit();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Error actualizando usuarios y procesos: " + ex.Message);
                 throw;
+            }
+        }
+
+        public string ObtenerUbicacionHelper(int companyId)
+        {
+            using var conn = new SqlConnection(_connectionString);
+            using var cmd = new SqlCommand(@"SELECT ubicacion 
+                FROM PyxoomUser.Configuracion_Correo 
+                WHERE id_empresa = @companyId", conn)
+            {
+                CommandType = CommandType.Text
+            };
+
+            cmd.Parameters.AddWithValue("@companyId", companyId);
+
+            try
+            {
+                conn.Open();
+                var result = cmd.ExecuteScalar()?.ToString();
+                return !string.IsNullOrEmpty(result) ? Encryption.Decrypt(result) : string.Empty;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Error al obtener ubicación helper: " + ex.Message);
+                return string.Empty;
             }
         }
 
@@ -194,8 +356,8 @@ namespace Pyxoom_Rabbit.Services
                     };
                 }
 
-                // Obtener ubicación
-                string ubicacion = ObtenerUbicacionInteractive(companyId);
+                // Obtener ubicación usando el método correcto
+                string ubicacion = ObtenerUbicacionHelper(companyId);
 
                 // Obtener datos de personas
                 var objData = ObtenerAccesoPersonaInteractive(personProcessId.Split('|'), companyId, 1);
@@ -222,30 +384,25 @@ namespace Pyxoom_Rabbit.Services
                             TemplatePath = item.isEnglish
                                 ? "Content/MailTemplates/CandidateAccountMailTemplateEnglish.htm"
                                 : "Content/MailTemplates/CandidateAccountMailTemplate.htm",
-                            TemplateParameters = new Dictionary<string, string>
-                            {
-                                ["nombre"] = item.NameCandidateEmail,
-                                ["usuario"] = item.login,
-                                ["contraseña"] = item.password,
-                                ["name"] = item.NameCandidateEmail,
-                                ["jobposition"] = item.puesto ?? "",
-                                ["administrador"] = item.responsable,
-                                ["liga"] = ubicacion + "?lang=" + (item.isEnglish ? "en" : "es"),
-                                ["dias"] = item.dias_expiracion.ToString(),
-                                ["cid:uniqueId"] = ubicacion.Replace("/Home/Login", "") + "/Content/images/pyxoom-psw.png"
-                            }
+                            TemplateParameters = new Dictionary<string, string>()
                         };
 
-                        // Procesar mensaje principal
+                        // Procesar mensaje principal con reemplazos
                         string mainMessage = item.mainMessage ?? "";
-                        foreach (var param in emailRequest.TemplateParameters)
-                        {
-                            if (param.Key != "cid:uniqueId")
-                            {
-                                mainMessage = mainMessage.Replace("@" + param.Key, param.Value);
-                            }
-                        }
-                        emailRequest.TemplateParameters["mainMessage"] = mainMessage;
+                        mainMessage = mainMessage.Replace("@nombre", item.NameCandidateEmail);
+                        mainMessage = mainMessage.Replace("@usuario", item.login);
+                        mainMessage = mainMessage.Replace("@contraseña", item.password);
+                        mainMessage = mainMessage.Replace("@name", item.NameCandidateEmail);
+                        mainMessage = mainMessage.Replace("@jobposition", item.puesto ?? "");
+                        mainMessage = mainMessage.Replace("@administrador", item.responsable);
+                        mainMessage = mainMessage.Replace("@liga", ubicacion + "?lang=" + (item.isEnglish ? "en" : "es"));
+                        mainMessage = mainMessage.Replace("@dias", item.dias_expiracion.ToString());
+
+                        emailRequest.TemplateParameters.Add("mainMessage", mainMessage);
+
+                        // Agregar imagen
+                        var urlPyxoom = ObtenerUbicacionHelper(companyId);
+                        emailRequest.TemplateParameters.Add("cid:uniqueId", urlPyxoom.Replace("/Home/Login", "") + "/Content/images/pyxoom-psw.png");
 
                         var resultado = EnviarEmailPorBrevo(emailRequest, mailConfig);
                         if (resultado.IsSuccess)
@@ -258,7 +415,7 @@ namespace Pyxoom_Rabbit.Services
                 return new EmailResultDto
                 {
                     IsSuccess = emailsEnviados > 0,
-                    Message = $"Se enviaron {emailsEnviados} emails exitosamente"
+                    Message = emailsEnviados > 0 ? "Se enviaron los emails exitosamente" : "No se pudieron enviar emails"
                 };
             }
             catch (Exception ex)
@@ -415,6 +572,6 @@ namespace Pyxoom_Rabbit.Services
                     ErrorDetails = ex.Message
                 };
             }
-        }
+        } 
     }
 }
