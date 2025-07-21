@@ -2,6 +2,7 @@
 using Pyxoom_Rabbit;
 using Pyxoom_Rabbit.Database;
 using Pyxoom_Rabbit.Dtos;
+using Pyxoom_Rabbit.Services;
 using Serilog;
 using System.Buffers.Text;
 using System.IO;
@@ -208,7 +209,37 @@ namespace PSW.Pyxoom.Analytix.Queue
                     break;
 
                 case "enviar_correo_con_accesos":
-                   
+                    try
+                    {
+                        var emailService = new EmailService(config.GetConnectionString("Pyxoom42"));
+
+                        string personProcessIds = messageData.PersonProcessId?.ToString() ?? "";
+
+                        if (!string.IsNullOrEmpty(personProcessIds) && messageData.CompanyId.HasValue)
+                        {
+                            var resultado = emailService.EnviarEmailInteractiveShortUrl(
+                                personProcessIds,
+                                (int)messageData.CompanyId
+                            );
+
+                            if (resultado.IsSuccess)
+                            {
+                                Log.Logger.Information($"Email de accesos enviado exitosamente: {resultado.Message}");
+                            }
+                            else
+                            {
+                                Log.Logger.Error($"Error enviando email de accesos: {resultado.Message}");
+                            }
+                        }
+                        else
+                        {
+                            Log.Logger.Warning("Faltan datos requeridos para enviar email de accesos");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Logger.Error(ex, "Error al procesar envío de correo con accesos");
+                    }
                     break;
                 default:
                     Log.Logger.Information($"ChatBot - Acción pendiente de implementación: {messageData.Actions}");
