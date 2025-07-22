@@ -211,14 +211,12 @@ namespace PSW.Pyxoom.Analytix.Queue
                 case "enviar_correo_con_accesos":
                     try
                     {
-                        var emailService = new EmailService(config.GetConnectionString("Pyxoom42"));
+                        var emailService = new EmailService(config.GetConnectionString("Pyxoom42"), config); // <- Agregar config aquí
 
-                        string personProcessIds = messageData.PersonProcessId?.ToString() ?? "";
-
-                        if (!string.IsNullOrEmpty(personProcessIds) && messageData.CompanyId.HasValue)
+                        if (messageData.PersonProcessId.HasValue && messageData.CompanyId.HasValue)
                         {
                             var resultado = emailService.EnviarEmailInteractiveShortUrl(
-                                personProcessIds,
+                                messageData.PersonProcessId.ToString(),
                                 (int)messageData.CompanyId
                             );
 

@@ -11,70 +11,57 @@ using System.Threading.Tasks;
 using sib_api_v3_sdk.Api;
 using sib_api_v3_sdk.Client;
 using sib_api_v3_sdk.Model;
+using Microsoft.Extensions.Configuration;
 
 namespace Pyxoom_Rabbit.Services
-{ 
+{
     public class EmailService
     {
         private readonly string _connectionString;
+        private readonly IConfiguration _configuration;
 
-        public EmailService(string connectionString)
+        public EmailService(string connectionString, IConfiguration configuration)
         {
             _connectionString = connectionString;
+            _configuration = configuration;
         }
 
         public EmailConfigurationDto ObtenerConfiguracionBrevo()
         {
-            using var conn = new SqlConnection(_connectionString);
-            using var cmd = new SqlCommand(@"SELECT 
-                host, puerto, ssl, usuario, 
-                password, sender
-                FROM PyxoomUser.Configuracion_Correo 
-                WHERE ssl = 1", conn)
-            {
-                CommandType = CommandType.Text
-            };
-
             try
             {
-                conn.Open();
-                using var reader = cmd.ExecuteReader();
-
-                if (reader.HasRows && reader.Read())
+                var config = new EmailConfigurationDto
                 {
-                    var config = new EmailConfigurationDto
-                    {
-                        Host = DbUtils.GetNullableString(reader, "host"),
-                        Port = Convert.ToInt32(reader["puerto"]),
-                        UserName = DbUtils.GetNullableString(reader, "usuario"),
-                        Password = DbUtils.GetNullableString(reader, "password"),
-                        
-                        UseSSL = Convert.ToBoolean(reader["ssl"]),
-                        Sender = DbUtils.GetNullableString(reader, "sender")
-                    };
+                    Host = _configuration["Brevo:BrevoHost"],
+                    Port = int.Parse(Encryption.Decrypt(_configuration["Brevo:BrevoPort"])),
+                    UserName = _configuration["Brevo:BrevoAcc"],
+                    Password = _configuration["Brevo:BrevoSec"],
+                    ApiKey = _configuration["Brevo:BrevoKey"], // Esta NO está encriptada
+                    UseSSL = bool.Parse(Encryption.Decrypt(_configuration["Brevo:BrevoSsl"])),
+                    Sender = _configuration["Brevo:BrevoSender"]
+                };
 
-                    // Desencriptar valores sensibles
-                    if (!string.IsNullOrEmpty(config.Host))
-                        config.Host = Encryption.Decrypt(config.Host);
+                // Desencriptar valores que SÍ están encriptados
+                if (!string.IsNullOrEmpty(config.Host))
+                    config.Host = Encryption.Decrypt(config.Host);
 
-                    if (!string.IsNullOrEmpty(config.UserName))
-                        config.UserName = Encryption.Decrypt(config.UserName);
+                if (!string.IsNullOrEmpty(config.UserName))
+                    config.UserName = Encryption.Decrypt(config.UserName);
 
-                    if (!string.IsNullOrEmpty(config.Password))
-                        config.Password = Encryption.Decrypt(config.Password);
+                if (!string.IsNullOrEmpty(config.Password))
+                    config.Password = Encryption.Decrypt(config.Password);
 
-                    if (!string.IsNullOrEmpty(config.Sender))
-                        config.Sender = Encryption.Decrypt(config.Sender);
+                if (!string.IsNullOrEmpty(config.Sender))
+                    config.Sender = Encryption.Decrypt(config.Sender);
 
-                    return config;
-                }
+                // ApiKey NO se desencripta porque ya está en texto plano
 
-                return null;
+                return config;
             }
             catch (Exception ex)
             {
                 Console.WriteLine("Error al obtener configuración de Brevo: " + ex.Message);
-                throw;
+                return null;
             }
         }
 
@@ -141,6 +128,9 @@ namespace Pyxoom_Rabbit.Services
 
                     resultados.Add(persona);
                 }
+
+                // Actualizar usuarios y procesos (como en tu lógica original)
+                ActualizarUsuariosYProcesos(ppIds, companyId);
 
                 return resultados;
             }
@@ -389,6 +379,15 @@ namespace Pyxoom_Rabbit.Services
 
                         // Procesar mensaje principal con reemplazos
                         string mainMessage = item.mainMessage ?? "";
+
+                        // Si no hay mensaje en BD, usar uno por defecto
+                        if (string.IsNullOrEmpty(mainMessage))
+                        {
+                            mainMessage = item.isEnglish
+                                ? "Dear @nombre,\n\nYour access credentials are:\nUser: @usuario\nPassword: @contraseña\n\nYou can access here: @liga\n\nThis access expires in @dias days.\n\nBest regards,\n@administrador"
+                                : "Estimado(a) @nombre,\n\nTus credenciales de acceso son:\nUsuario: @usuario\nContraseña: @contraseña\n\nPuedes ingresar aquí: @liga\n\nEste acceso expira en @dias días.\n\nSaludos,\n@administrador";
+                        }
+
                         mainMessage = mainMessage.Replace("@nombre", item.NameCandidateEmail);
                         mainMessage = mainMessage.Replace("@usuario", item.login);
                         mainMessage = mainMessage.Replace("@contraseña", item.password);
@@ -505,10 +504,20 @@ namespace Pyxoom_Rabbit.Services
                 {
                     content = File.ReadAllText(templatePath);
                 }
+                else
+                {
+                    Console.WriteLine($"Template no encontrado: {templatePath}, usando template por defecto");
+                    content = ObtenerTemplatePorDefecto();
+                }
             }
             else if (!string.IsNullOrEmpty(emailRequest.HtmlContent))
             {
                 content = emailRequest.HtmlContent;
+            }
+            else
+            {
+                // Si no hay template ni HTML, usar el por defecto
+                content = ObtenerTemplatePorDefecto();
             }
 
             // Procesar parámetros de reemplazo
@@ -528,6 +537,77 @@ namespace Pyxoom_Rabbit.Services
             }
 
             return content;
+        }
+
+        private string ObtenerTemplatePorDefecto()
+        {
+            return @"<!DOCTYPE html PUBLIC ""-//W3C//DTD XHTML 1.0 Transitional//EN"" ""http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"">
+<html xmlns=""http://www.w3.org/1999/xhtml"">
+<head>
+    <title></title>
+    <style type=""text/css"">
+        body {
+            font-family: Arial, Verdana, Sans-Serif;
+        }
+        table tr td {
+            text-align: left;
+        }
+        .regular-text {
+            font-size: 12px;
+            text-align: justify;
+        }
+        .container-data-title {
+            width: 90px;
+            font-size: 13px;
+            font-weight: bold;
+            padding: 5px;
+            border: solid 1px #EAF282;
+        }
+        .container-data-text {
+            font-size: 13px;
+            font-weight: bold;
+            padding: 5px;
+            background: #EAF282;
+        }
+        .style3 {
+            height: 83px;
+            width: 211px;
+        }
+    </style>
+</head>
+<body>
+    <div style=""width: 100%; margin: auto; text-align: center; padding: 3px;"">
+        <div>
+            <table cellpadding=""0"" cellspacing=""0"" width=""80%"">
+                <tr>
+                    <td style=""width: 80%; background: url(../../Resources/Images/title-bg.png) repeat-x"">
+                        <h3 style=""margin: 0px 0px 5px 0px"" align=""center"">
+                            <b>Cuenta de usuario </b>
+                        </h3>
+                    </td>
+                </tr>
+                <tr>
+                    <td colspan=""2"" class=""regular-text"" style=""padding: 10px 10px 10px 10px"" align=""left"">
+                        <br />
+                        @mainMessage
+                    </td>
+                </tr>
+                <tr>
+                    <td colspan=""2"" style=""height: 55px; padding-right: 10px; text-align: right; font-size: 11px; background: url(../../Resources/Images/title-footer-bg.png) repeat-x"">
+                        <table cellpadding=""0"" cellspacing=""0"" align=""right"">
+                            <tr>
+                                <td style=""background: url(../../Resources/Images/pyxoom-psw.png) repeat-x"" class=""style3"">
+                                    <img align=""right"" alt=""PYXOOM"" border=""0"" hspace=""0"" src=""cid:uniqueId"" />
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+            </table>
+        </div>
+    </div>
+</body>
+</html>";
         }
 
         private List<SendSmtpEmailTo> ObtenerDestinatarios(string emailAddresses)
@@ -572,6 +652,6 @@ namespace Pyxoom_Rabbit.Services
                     ErrorDetails = ex.Message
                 };
             }
-        } 
+        }
     }
 }
