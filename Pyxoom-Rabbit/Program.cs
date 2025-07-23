@@ -130,7 +130,9 @@ namespace PSW.Pyxoom.Analytix.Queue
                 case "crear_candidato":
                     PersonaInfoDto persona = dbManager.PyxoomService.ObtenerInfoPersona((int)messageData.PersonId);
                     string avisoPrivacidad = dbManager.PyxoomService.ObtenerAvisoDePrivacidad((int)messageData.CompanyId);
-                    CallCandidatosApiAsync(persona, (int)messageData.VacancyId, 1, (int)messageData.PersonProcessId, avisoPrivacidad, config).Wait();
+                    string nombreEmpresa = dbManager.PyxoomService.ObtenerNombreEmpresa((int)messageData.CompanyId);
+                    ConfiguracionKitDto configuracionKit = dbManager.PyxoomService.ObtenerConfiguracionKit((int)messageData.VacancyId);
+                    CallCandidatosApiAsync(persona, configuracionKit, (int)messageData.VacancyId, 1, (int)messageData.PersonProcessId, avisoPrivacidad, nombreEmpresa, config).Wait();
                     break;
 
                 case "finalizacion_vacante":
@@ -185,14 +187,13 @@ namespace PSW.Pyxoom.Analytix.Queue
                     }
                     break;
 
-                case "pregunta_faltantes_respondidas":
+                case "RespuestasDePreguntasFaltantes":
                     try
                     {
-                        var respuestasFaltantes = JsonSerializer.Deserialize<List<RespuestasRegistroDto>>(body);
-
-                        if (respuestasFaltantes != null && respuestasFaltantes.Any() && messageData.PersonId.HasValue)
+                        var mensaje = JsonSerializer.Deserialize<MensajeRespuestasDto>(body);
+                        if (mensaje?.respuestas != null && mensaje.respuestas.Any() && messageData.PersonId.HasValue)
                         {
-                            dbManager.PyxoomService.ActualizarDatosFaltantesPersona(respuestasFaltantes, (int)messageData.PersonId);
+                            dbManager.PyxoomService.ActualizarDatosFaltantesPersona(mensaje.respuestas, (int)messageData.PersonId);
                         }
                         else
                         {
@@ -256,7 +257,7 @@ namespace PSW.Pyxoom.Analytix.Queue
             return textoLimpio.Trim();
         }
 
-        private static async Task CallCandidatosApiAsync(PersonaInfoDto personaInfo, int vacancyId,int clientId,int personaProcesoId, string avisoPrivacidad, IConfiguration config)
+        private static async Task CallCandidatosApiAsync(PersonaInfoDto personaInfo, ConfiguracionKitDto configuracionKit, int vacancyId,int clientId,int personaProcesoId, string avisoPrivacidad, string npmbreEmpresa, IConfiguration config)
         {
             try
             {
@@ -292,7 +293,9 @@ namespace PSW.Pyxoom.Analytix.Queue
                     correo = personaInfo.CorreoElectronico,
                     procesoActivo = true,
                     recordatoriosActivos = true,
-                    solicitarCV = true,
+                    solicitarCV = configuracionKit.AltaCv,
+                    filtradoInteligente = configuracionKit.FiltradoInteligente,
+                    nombreEmpresa = npmbreEmpresa,
                     urlPyxoom = urlPyxoom,
                     urlCurriculumKey = urlPyxoom,
                     urlCustom = urlPyxoom,

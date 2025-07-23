@@ -58,11 +58,22 @@ namespace Pyxoom_Rabbit.Dtos
         public string Actions { get; set; }
     }
 
+    public class MensajeRespuestasDto
+    {
+        public List<RespuestasRegistroDto> respuestas { get; set; }
+    }
+
     public class RespuestasRegistroDto
     { 
-        public int id_respuesta { get; set; }
+        public int? id_respuesta { get; set; }
         public int id_pregunta { get; set; }
-        public string respuestaTexto { get; set; }
-        public int personaProcesoId { get; set; }
+        public string pregunta { get; set; }
+        public string respuesta { get; set; }
     }
+    public class ConfiguracionKitDto
+    {
+        public bool AltaCv { get; set; } = false;
+        public bool FiltradoInteligente { get; set; } = false;
+    }
+    
 }

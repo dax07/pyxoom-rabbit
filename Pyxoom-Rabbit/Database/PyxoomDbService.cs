@@ -281,7 +281,7 @@ namespace Pyxoom_Rabbit.Database
                     // Agregar parámetros
                     cmd.Parameters.AddWithValue("@id_respuesta", (object)respuesta.id_respuesta ?? DBNull.Value);
                     cmd.Parameters.AddWithValue("@id_pregunta", respuesta.id_pregunta);
-                    cmd.Parameters.AddWithValue("@respuesta_texto", (object)respuesta.respuestaTexto ?? DBNull.Value);
+                    cmd.Parameters.AddWithValue("@respuesta_texto", (object)respuesta.respuesta ?? DBNull.Value);
                     cmd.Parameters.AddWithValue("@id_persona_proceso", idPersonaProceso);
 
                     cmd.ExecuteNonQuery();
@@ -353,8 +353,8 @@ namespace Pyxoom_Rabbit.Database
                         if (!string.IsNullOrEmpty(valorActualizar))
                         {
                             string query = $@"UPDATE PyxoomUser.Persona 
-                                    SET {campoActualizar} = @valor 
-                                    WHERE id_persona = @id_persona";
+                            SET {campoActualizar} = @valor 
+                            WHERE id_persona = @id_persona";
 
                             using var cmd = new SqlCommand(query, conn)
                             {
@@ -387,11 +387,11 @@ namespace Pyxoom_Rabbit.Database
         {
             return idPregunta switch
             {
-                1000 => "primer_nombre", // Nombre completo (tomamos solo primer nombre)
-                1001 => "sexo",          // Género
+                1000 => "primer_nombre",   // Nombre completo (tomamos solo primer nombre)
+                1001 => "sexo",           // Género
                 1002 => "fecha_nacimiento", // Fecha de nacimiento
-                1003 => "id_escolaridad",   // Escolaridad
-                1004 => "id_estado_civil",  // Estado civil
+                1003 => "id_estado_civil",  // Estado civil (movido de 1004 a 1003)
+                1004 => "id_escolaridad",   // Escolaridad (movido de 1003 a 1004, aunque parece que ya no se usa)
                 _ => string.Empty
             };
         }
@@ -401,34 +401,145 @@ namespace Pyxoom_Rabbit.Database
             switch (campo)
             {
                 case "primer_nombre":
-                    return !string.IsNullOrEmpty(respuesta.respuestaTexto)
-                        ? Encryption.Encrypt(respuesta.respuestaTexto)
+                    // Para nombre completo, encriptar directamente la respuesta de texto
+                    return !string.IsNullOrEmpty(respuesta.respuesta)
+                        ? Encryption.Encrypt(respuesta.respuesta)
                         : string.Empty;
 
                 case "sexo":
-                    return respuesta.id_respuesta switch
+                    // Para género, convertir el ID a M/F
+                    return respuesta.respuesta switch
                     {
-                        1 => "M", // Masculino
-                        2 => "F", // Femenino
+                        "1" => "M", // Masculino
+                        "2" => "F", // Femenino
                         _ => string.Empty
                     };
 
                 case "fecha_nacimiento":
-                    return !string.IsNullOrEmpty(respuesta.respuestaTexto)
-                        ? Encryption.Encrypt(respuesta.respuestaTexto)
+                    // Para fecha de nacimiento, encriptar la fecha
+                    return !string.IsNullOrEmpty(respuesta.respuesta)
+                        ? Encryption.Encrypt(respuesta.respuesta)
+                        : string.Empty;
+
+                case "id_estado_civil":
+                    // Para estado civil, usar directamente el ID de la respuesta
+                    return !string.IsNullOrEmpty(respuesta.respuesta)
+                        ? respuesta.respuesta
                         : string.Empty;
 
                 case "id_escolaridad":
-                    return respuesta.id_respuesta.ToString() ?? string.Empty;
-
-                case "id_estado_civil":
-                    return respuesta.id_respuesta.ToString() ?? string.Empty;
+                    // Para escolaridad, usar directamente el ID de la respuesta
+                    return !string.IsNullOrEmpty(respuesta.respuesta)
+                        ? respuesta.respuesta
+                        : string.Empty;
 
                 default:
                     return string.Empty;
             }
         }
 
+        public void ActualizarEstatusChatbot(int idPersonaProceso, bool enChatbot)
+        {
+            using var conn = new SqlConnection(_connectionString);
+            using var cmd = new SqlCommand(@"UPDATE PyxoomUser.Persona_Proceso 
+        SET en_Chatbot = @en_chatbot 
+        WHERE id_persona_proceso = @id_persona_proceso", conn)
+            {
+                CommandType = CommandType.Text
+            };
+
+            cmd.Parameters.AddWithValue("@en_chatbot", enChatbot);
+            cmd.Parameters.AddWithValue("@id_persona_proceso", idPersonaProceso);
+
+            try
+            {
+                conn.Open();
+                int rowsAffected = cmd.ExecuteNonQuery();
+
+                if (rowsAffected > 0)
+                {
+                    Console.WriteLine($"Estatus chatbot actualizado correctamente para persona_proceso {idPersonaProceso}");
+                }
+                else
+                {
+                    Console.WriteLine($"No se encontró registro con id_persona_proceso {idPersonaProceso}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error al actualizar estatus chatbot: {ex.Message}");
+                throw;
+            }
+        }
+
+        public ConfiguracionKitDto ObtenerConfiguracionKit(int vacanteId)
+        {
+            using var conn = new SqlConnection(_connectionString);
+            using var cmd = new SqlCommand(@"SELECT 
+            kp.alta_cv,
+            kp.filtrado_inteligente
+        FROM Pyxoom.Kit_vacante kv
+        INNER JOIN Pyxoom.KitPreseleccion kp ON kv.id_kit = kp.id_kit
+        WHERE kv.id_vacante = @vacante_id", conn)
+            {
+                CommandType = CommandType.Text
+            };
+
+            cmd.Parameters.AddWithValue("@vacante_id", vacanteId);
+
+            try
+            {
+                conn.Open();
+                using var reader = cmd.ExecuteReader();
+
+                if (reader.HasRows && reader.Read())
+                {
+                    return new ConfiguracionKitDto
+                    {
+                        AltaCv = reader["alta_cv"] != DBNull.Value && Convert.ToBoolean(reader["alta_cv"]),
+                        FiltradoInteligente = reader["filtrado_inteligente"] != DBNull.Value && Convert.ToBoolean(reader["filtrado_inteligente"])
+                    };
+                }
+
+                return new ConfiguracionKitDto(); // Retorna valores por defecto si no encuentra datos
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Error al obtener configuración del kit: " + ex.Message);
+                throw;
+            }
+        }
+
+        public string ObtenerNombreEmpresa(int idEmpresa)
+        {
+            using var conn = new SqlConnection(_connectionString);
+            using var cmd = new SqlCommand(@"SELECT nombre 
+        FROM PyxoomUser.Empresa 
+        WHERE id_empresa = @id_empresa", conn)
+            {
+                CommandType = CommandType.Text
+            };
+
+            cmd.Parameters.AddWithValue("@id_empresa", idEmpresa);
+
+            try
+            {
+                conn.Open();
+                using var reader = cmd.ExecuteReader();
+
+                if (reader.HasRows && reader.Read())
+                {
+                    return DbUtils.GetNullableString(reader, "nombre") ?? string.Empty;
+                }
+
+                return string.Empty;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Error al obtener nombre de empresa: " + ex.Message);
+                throw;
+            }
+        }
     }
 
 }
