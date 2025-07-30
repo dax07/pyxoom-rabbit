@@ -540,6 +540,50 @@ namespace Pyxoom_Rabbit.Database
                 throw;
             }
         }
+
+        public bool TieneCheckProfesional(int idPersonaProceso)
+        {
+            using var conn = new SqlConnection(_connectionString);
+
+            try
+            {
+                conn.Open();
+
+                using var cmdEtapa = new SqlCommand(@"SELECT IdEtapa 
+            FROM Pyxoom.KitEtapas 
+            WHERE NombreEtapa = 'Preguntas Dinámicas'", conn)
+                {
+                    CommandType = CommandType.Text
+                };
+
+                var idEtapa = cmdEtapa.ExecuteScalar();
+
+                if (idEtapa == null)
+                {
+                    Console.WriteLine("No se encontró la etapa 'Preguntas Dinámicas'");
+                    return false;
+                }
+
+                using var cmdCheck = new SqlCommand(@"SELECT COUNT(*) 
+            FROM Pyxoom.KitEtapaPersonaProceso 
+            WHERE IdEtapa = @IdEtapa AND IdPersonaProceso = @IdPersonaProceso", conn)
+                {
+                    CommandType = CommandType.Text
+                };
+
+                cmdCheck.Parameters.AddWithValue("@IdEtapa", idEtapa);
+                cmdCheck.Parameters.AddWithValue("@IdPersonaProceso", idPersonaProceso);
+
+                int count = Convert.ToInt32(cmdCheck.ExecuteScalar());
+
+                return count > 0;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error al verificar check profesional: {ex.Message}");
+                throw;
+            }
+        }
     }
 
 }

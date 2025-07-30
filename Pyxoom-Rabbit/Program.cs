@@ -131,8 +131,9 @@ namespace PSW.Pyxoom.Analytix.Queue
                     PersonaInfoDto persona = dbManager.PyxoomService.ObtenerInfoPersona((int)messageData.PersonId);
                     string avisoPrivacidad = dbManager.PyxoomService.ObtenerAvisoDePrivacidad((int)messageData.CompanyId);
                     string nombreEmpresa = dbManager.PyxoomService.ObtenerNombreEmpresa((int)messageData.CompanyId);
+                    bool checkProfesional = dbManager.PyxoomService.TieneCheckProfesional((int)messageData.PersonProcessId);
                     ConfiguracionKitDto configuracionKit = dbManager.PyxoomService.ObtenerConfiguracionKit((int)messageData.VacancyId);
-                    CallCandidatosApiAsync(persona, configuracionKit, (int)messageData.VacancyId, 1, (int)messageData.PersonProcessId, avisoPrivacidad, nombreEmpresa, config).Wait();
+                    CallCandidatosApiAsync(persona, configuracionKit, (int)messageData.VacancyId, (int)messageData.PersonProcessId, avisoPrivacidad, nombreEmpresa, checkProfesional, config).Wait();
                     break;
 
                 case "finalizacion_vacante":
@@ -257,7 +258,7 @@ namespace PSW.Pyxoom.Analytix.Queue
             return textoLimpio.Trim();
         }
 
-        private static async Task CallCandidatosApiAsync(PersonaInfoDto personaInfo, ConfiguracionKitDto configuracionKit, int vacancyId,int clientId,int personaProcesoId, string avisoPrivacidad, string npmbreEmpresa, IConfiguration config)
+        private static async Task CallCandidatosApiAsync(PersonaInfoDto personaInfo, ConfiguracionKitDto configuracionKit, int vacancyId,int personaProcesoId, string avisoPrivacidad, string npmbreEmpresa,bool check, IConfiguration config)
         {
             try
             {
@@ -277,6 +278,7 @@ namespace PSW.Pyxoom.Analytix.Queue
                 var encryptedData = EncryptText(dataToEncrypt, secretKey);
                 var urlPyxoom = $"{pyxoomInteractiveUrl}?token={encryptedData}";
 
+                int clientId = int.Parse(config["ExternalServices:ClientId"]);
                 var avisoPrivacidadLimpio = LimpiarHtml(avisoPrivacidad);
                 var preguntasFaltantes = CrearPreguntasFaltantes(personaInfo);
 
@@ -300,6 +302,7 @@ namespace PSW.Pyxoom.Analytix.Queue
                     urlCurriculumKey = urlPyxoom,
                     urlCustom = urlPyxoom,
                     avisoPrivacidad = avisoPrivacidadLimpio,
+                    tieneCheck = check,
                     preguntasFaltantes = preguntasFaltantes
                 };
 
