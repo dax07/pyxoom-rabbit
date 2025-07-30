@@ -302,7 +302,7 @@ namespace PSW.Pyxoom.Analytix.Queue
                     urlCurriculumKey = urlPyxoom,
                     urlCustom = urlPyxoom,
                     avisoPrivacidad = avisoPrivacidadLimpio,
-                    tieneCheck = check,
+                    chekProfesional = check,
                     preguntasFaltantes = preguntasFaltantes
                 };
 
