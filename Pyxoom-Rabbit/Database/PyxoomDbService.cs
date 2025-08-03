@@ -584,6 +584,121 @@ namespace Pyxoom_Rabbit.Database
                 throw;
             }
         }
+
+        public int CrearPersona(string telefonoMovil)
+        {
+            using var conn = new SqlConnection(_connectionString);
+            using var cmd = new SqlCommand(@"INSERT INTO PyxoomUser.Persona 
+        (fecha_registro, telefono_particular, telefono_movil)
+        OUTPUT INSERTED.id_persona
+        VALUES (@fecha_registro, @telefono_particular, @telefono_movil)", conn)
+            {
+                CommandType = CommandType.Text
+            };
+
+
+            cmd.Parameters.AddWithValue("@fecha_registro", DateTime.Now);
+            cmd.Parameters.AddWithValue("@telefono_particular", telefonoMovil);
+            cmd.Parameters.AddWithValue("@telefono_movil", telefonoMovil);
+
+            try
+            {
+                conn.Open();
+                int idPersona = (int)cmd.ExecuteScalar();
+
+                Console.WriteLine($"Persona creada correctamente con ID: {idPersona}");
+                return idPersona;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error al crear persona: {ex.Message}");
+                throw;
+            }
+        }
+
+        public int CrearPersonaProceso(int idPersona, int idVacante)
+        {
+            using var conn = new SqlConnection(_connectionString);
+            using var cmd = new SqlCommand(@"INSERT INTO PyxoomUser.Persona_Proceso 
+        (id_persona, id_vacante, id_estatus_persona, id_estatus_proceso, fecha_registro, envio_datos, bit_recordado)
+        OUTPUT INSERTED.id_persona_proceso
+        VALUES (@id_persona, @id_vacante, @id_estatus_persona, @id_estatus_proceso, @fecha_registro, @envio_datos, @bit_recordado)", conn)
+            {
+                CommandType = CommandType.Text
+            };
+
+            cmd.Parameters.AddWithValue("@id_persona", idPersona);
+            cmd.Parameters.AddWithValue("@id_vacante", idVacante);
+            cmd.Parameters.AddWithValue("@id_estatus_persona", 1);
+            cmd.Parameters.AddWithValue("@id_estatus_proceso", 1);
+            cmd.Parameters.AddWithValue("@fecha_registro", DateTime.Now);
+            cmd.Parameters.AddWithValue("@envio_datos", 0);
+            cmd.Parameters.AddWithValue("@bit_recordado", false);
+
+            try
+            {
+                conn.Open();
+                int idPersonaProceso = (int)cmd.ExecuteScalar();
+
+                return idPersonaProceso;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error al crear persona_proceso: {ex.Message}");
+                throw;
+            }
+        }
+
+        public int CrearPersonaYProceso(string telefonoMovil, int idVacante)
+        {
+            try
+            {
+                int idPersona = CrearPersona(telefonoMovil);
+
+                int idPersonaProceso = CrearPersonaProceso(idPersona, idVacante);
+
+                return idPersonaProceso;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error al crear persona y proceso: {ex.Message}");
+                throw;
+            }
+        }
+        public PersonaProcesoBasicDto ObtenerPersonaDePersonaProceso(int idPersonaProceso)
+        {
+            using var conn = new SqlConnection(_connectionString);
+            using var cmd = new SqlCommand(@"SELECT id_persona, id_persona_proceso 
+        FROM PyxoomUser.Persona_Proceso 
+        WHERE id_persona_proceso = @id_persona_proceso", conn)
+            {
+                CommandType = CommandType.Text
+            };
+
+            cmd.Parameters.AddWithValue("@id_persona_proceso", idPersonaProceso);
+
+            try
+            {
+                conn.Open();
+                using var reader = cmd.ExecuteReader();
+
+                if (reader.HasRows && reader.Read())
+                {
+                    return new PersonaProcesoBasicDto
+                    {
+                        PersonId = Convert.ToInt32(reader["id_persona"]),
+                        PersonProcessId = Convert.ToInt32(reader["id_persona_proceso"])
+                    };
+                }
+
+                return null;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error al obtener persona de persona_proceso: {ex.Message}");
+                throw;
+            }
+        }
     }
 
 }

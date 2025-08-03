@@ -54,6 +54,7 @@ namespace Pyxoom_Rabbit.Dtos
         public int? PersonId { get; set; }
         public int? PersonProcessId { get; set; }
         public int? VacancyId { get; set; }
+        public string? TelefonoMovil { get; set; }
         public string Type { get; set; }
         public string Actions { get; set; }
     }
@@ -75,5 +76,11 @@ namespace Pyxoom_Rabbit.Dtos
         public bool AltaCv { get; set; } = false;
         public bool FiltradoInteligente { get; set; } = false;
     }
-    
+
+    public class PersonaProcesoBasicDto
+    {
+        public int PersonId { get; set; }
+        public int PersonProcessId { get; set; }
+    }
+
 }

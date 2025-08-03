@@ -241,6 +241,43 @@ namespace PSW.Pyxoom.Analytix.Queue
                         Log.Logger.Error(ex, "Error al procesar envío de correo con accesos");
                     }
                     break;
+
+                case "crear_persona":
+                    try
+                    {
+                        if (messageData.VacancyId.HasValue && !string.IsNullOrEmpty(messageData.TelefonoMovil))
+                        {
+
+                            int idPersonaProceso = dbManager.PyxoomService.CrearPersonaYProceso(
+                                messageData.TelefonoMovil,
+                                (int)messageData.VacancyId
+                            );
+
+                            var personaCreada = dbManager.PyxoomService.ObtenerPersonaDePersonaProceso(idPersonaProceso);
+
+                            if (personaCreada != null)
+                            {
+
+                                PersonaInfoDto persona = dbManager.PyxoomService.ObtenerInfoPersona(personaCreada.PersonId);
+                                string avisoPrivacidad = dbManager.PyxoomService.ObtenerAvisoDePrivacidad((int)messageData.CompanyId);
+                                string nombreEmpresa = dbManager.PyxoomService.ObtenerNombreEmpresa((int)messageData.CompanyId);
+                                bool checkProfesional = dbManager.PyxoomService.TieneCheckProfesional(idPersonaProceso);
+                                ConfiguracionKitDto configuracionKit = dbManager.PyxoomService.ObtenerConfiguracionKit((int)messageData.VacancyId);
+
+                                CallCandidatosApiAsync(persona, configuracionKit, (int)messageData.VacancyId, idPersonaProceso, avisoPrivacidad, nombreEmpresa, checkProfesional, config).Wait();
+
+                            }
+                        }
+                        else
+                        {
+                            Log.Logger.Warning("Faltan datos requeridos para crear persona: VacancyId, CompanyId y TelefonoMovil son obligatorios");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Logger.Error(ex, "Error al procesar creación de persona");
+                    }
+                    break;
                 default:
                     Log.Logger.Information($"ChatBot - Acción pendiente de implementación: {messageData.Actions}");
                     break;
