@@ -38,32 +38,6 @@ namespace PSW.Pyxoom.Analytix.Queue
             //logger.Information("Starting Analytix Worker Services");
             //Log.Logger = logger;
             var rabbitHelper = new RabbitMQHelper(config);
-            //var service2 = new ModelAnalytix();
-            //service2.GetEventComments("90");
-
-            //RabbitMQHelper.ProcessResult ConsumeFunction(string body, string messageId = "")
-            //{
-            //    var dbManager = new DbManager(config);
-            //    var pr = new RabbitMQHelper.ProcessResult { };
-            //    Log.Logger.Information($"Mensaje recibido: {messageId}");
-            //    var jsonData = JsonSerializer.Deserialize<Dictionary<string, object>>(body);
-            //    var messageData = JsonSerializer.Deserialize<MessageDto>(body);
-            //    if (messageData.Type == "candidates")
-            //    {
-            //        PersonaInfoDto persona = dbManager.PyxoomService.ObtenerInfoPersona((int)messageData.PersonId);
-            //        string avisoPrivacidad = dbManager.PyxoomService.ObtenerAvisoDePrivacidad((int)messageData.CompanyId);
-            //        CallCandidatosApiAsync(persona, (int)messageData.VacancyId, (int)messageData.CompanyId, (int)messageData.PersonProcessId, avisoPrivacidad, config).Wait();
-            //    }
-            //    else if (messageData.Type == "vancancy")
-            //    {
-            //        List<PreguntaDto> preguntas = dbManager.PyxoomService.ObtenerPreguntasVacante((int)messageData.VacancyId);
-            //        CallPreguntasApiAsync(preguntas, (int)messageData.VacancyId, config).Wait();
-            //    }
-
-            //    var method = jsonData["method"].ToString();
-
-            //    return pr;
-            //}
 
             RabbitMQHelper.ProcessResult ConsumeFunction(string body, string messageId = "")
             {
@@ -124,8 +98,9 @@ namespace PSW.Pyxoom.Analytix.Queue
             {
                 case "crear_vacante":
                     List<PreguntaDto> preguntas = dbManager.PyxoomService.ObtenerPreguntasVacante((int)messageData.VacancyId);
+                    string nombre_empresa = dbManager.PyxoomService.ObtenerNombreEmpresa((int)messageData.CompanyId);
                     string avisoPrivacida = dbManager.PyxoomService.ObtenerAvisoDePrivacidad((int)messageData.CompanyId);
-                    CallPreguntasApiAsync(preguntas, (int)messageData.VacancyId, avisoPrivacida, config).Wait();
+                    CallPreguntasApiAsync(preguntas, (int)messageData.VacancyId, avisoPrivacida, nombre_empresa, config).Wait();
                     break;
 
                 case "crear_candidato":
@@ -375,7 +350,7 @@ namespace PSW.Pyxoom.Analytix.Queue
             }
         }
 
-        private static async Task CallPreguntasApiAsync(List<PreguntaDto> preguntas, int vacanteId,string avisoPrivacidad, IConfiguration config)
+        private static async Task CallPreguntasApiAsync(List<PreguntaDto> preguntas, int vacanteId,string avisoPrivacidad,string nombre_empresa, IConfiguration config)
         {
             try
             {
@@ -383,7 +358,7 @@ namespace PSW.Pyxoom.Analytix.Queue
                 var apiKey = config["ExternalServices:ApiKey"];
 
                 var preguntasEndpoint = $"{nodeAppUrl}api/preguntas";
-                var preguntasData = CrearDatosPreguntasApi(preguntas, vacanteId, avisoPrivacidad, config);
+                var preguntasData = CrearDatosPreguntasApi(preguntas, vacanteId, avisoPrivacidad, nombre_empresa, config);
 
                 var jsonPreguntas = JsonSerializer.Serialize(preguntasData, new JsonSerializerOptions
                 {
@@ -469,7 +444,7 @@ namespace PSW.Pyxoom.Analytix.Queue
             }
         }
 
-        private static object CrearDatosPreguntasApi(List<PreguntaDto> preguntas, int vacanteId,string avisoPrivacidad, IConfiguration config)
+        private static object CrearDatosPreguntasApi(List<PreguntaDto> preguntas, int vacanteId,string avisoPrivacidad,string nombre_empresa, IConfiguration config)
         {
             int clientId = int.Parse(config["ExternalServices:ClientId"]);
             var avisoPrivacidadLimpio = LimpiarHtml(avisoPrivacidad);
@@ -504,7 +479,8 @@ namespace PSW.Pyxoom.Analytix.Queue
                 creadoEn = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.ffffffZ"),
                 creadoPor = "userVacante",
                 preguntasValidacion = preguntasValidacion,
-                avisoPrivacidad = avisoPrivacidadLimpio
+                avisoPrivacidad = avisoPrivacidadLimpio,
+                nombreEmpresa = nombre_empresa
             };
         }
 
